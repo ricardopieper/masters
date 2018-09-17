@@ -43,8 +43,10 @@ int main(int argc, char** argv) {
 
         //envia
         if (myRank == totalProcesses - 1) {
-            for (int c=0; c<N; c++) 
-                printf("Last process %i received line %i col %i value %i\n", myRank, i, c, msg[c]);
+            printf("received [");
+            for (int c = 0; c < N; c++)
+                printf("%i ", msg[c]);
+            printf("]\n");  
         } else {
             MPI_Send(msg, 10, MPI_INT, myRank + 1, tag, MPI_COMM_WORLD);
         }

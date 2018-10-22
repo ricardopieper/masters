@@ -130,7 +130,7 @@ Vec *raytrace_line(int y, int w, int h, int samps) {
     Vec cx = Vec(w * .5135 / h), cy = (cx % cam.d).norm() * .5135, r;
 
     Vec* c = new Vec[w];
-    fprintf(stderr, "\rRendering (%d spp) %5.2f%%", samps * 4, 100. * y / (h - 1));
+    fprintf(stderr, "\rRendering (%d spp) %5.2f%%", samps , 100. * y / (h - 1));
     for (unsigned short x = 0, Xi[3] = {0, 0, y * y * y}; x < w; x++)   // Loop cols
         for (int sy = 0; sy < 2; sy++) {   // 2x2 subpixel rows
             for (int sx = 0; sx < 2; sx++, r = Vec()) {        // 2x2 subpixel cols
@@ -151,7 +151,7 @@ Vec *raytrace_line(int y, int w, int h, int samps) {
 }
 
 int main(int argc, char *argv[]) {
-    int w = 1024, h = 768, samps = argc == 2 ? atoi(argv[1]) / 4 : 1; // # samples
+    int w = 1024, h = 768, samps = argc == 2 ? atoi(argv[1]) : 1; // # samples
 
     Vec **results = new Vec*[h];
 

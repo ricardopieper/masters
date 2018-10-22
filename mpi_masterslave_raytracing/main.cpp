@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <memory.h>
 #include "mpi.h"
+#include "../../../../../usr/local/include/mpi.h"
 #include <math.h>
 //The MPI usage of this program assumes MPI_Send and MPI_Recv are both blocking/synchronous.
 
@@ -11,6 +12,7 @@
 #define RESULT_MSGTAG 4
 #define TASK_MSGTAG 4
 #define MASTER 0
+#define GRAINSIZE 16
 #define ROWS 768
 #define COLS 1024
 
@@ -140,21 +142,23 @@ Vec radiance(const Ray &r, int depth, unsigned short *Xi, int E = 1) {
 }
 
 typedef struct Task {
-    int line;
+    int lineStart;
+    int lineEnd;
 } Task;
-
 
 
 int *serialize_task(const Task &task, int *totalCount) {
     int *serialized = new int[1];
-    serialized[0] = task.line;
-    *totalCount = 1;
+    serialized[0] = task.lineStart;
+    serialized[1] = task.lineEnd;
+    *totalCount = 2;
     return serialized;
 };
 
 Task deserialize_task(int *taskData) {
     Task r;
-    r.line = taskData[0];
+    r.lineStart = taskData[0];
+    r.lineEnd = taskData[1];
     return r;
 };
 
@@ -172,7 +176,7 @@ double *serialize_result(int line, Vec *vec, int vecSize, int *size) {
         serialized[j] = vec[i].x;
         serialized[j + 1] = vec[i].y;
         serialized[j + 2] = vec[i].z;
-   //     printf("rgb  is %f %f %f at line %i row %i\n", vec[i].x, vec[i].y, vec[i].z, line, i);
+        //     printf("rgb  is %f %f %f at line %i row %i\n", vec[i].x, vec[i].y, vec[i].z, line, i);
     }
     delete[] vec;
 
@@ -180,16 +184,15 @@ double *serialize_result(int line, Vec *vec, int vecSize, int *size) {
 }
 
 
-void renderImage(Vec** results) {
+void renderImage(double **results) {
 #ifdef SHOW_RESULTS
 
     FILE *f = fopen("image.ppm", "w"); // Write image to PPM file.
     fprintf(f, "P3\n%d %d\n%d\n", COLS, ROWS, 255);
     for (int i = ROWS - 1; i >= 0; i--) {
-        Vec* row = results[i];
-        for (int j = 0; j < COLS; j++) {
-            Vec c = row[j];
-            fprintf(f, "%d %d %d ", toInt(c.x), toInt(c.y), toInt(c.z));
+        double *row = results[i];
+        for (int j = 0; j < COLS * 3; j += 3) {
+            fprintf(f, "%d %d %d ", toInt(row[j]), toInt(row[j + 1]), toInt(row[j + 2]));
         }
     }
 #endif
@@ -201,7 +204,7 @@ double *raytrace_line(int y, int w, int h, int samps, int *bufferSize) {
     Vec cx = Vec(w * .5135 / h), cy = (cx % cam.d).norm() * .5135, r;
 
     Vec *c = new Vec[w];
-    fprintf(stderr, "\rRendering (%d spp) %5.2f%%", samps * 4, 100. * y / (h - 1));
+  //  fprintf(stderr, "\rRendering (%d spp) %5.2f%%", samps * 4, 100. * y / (h - 1));
     for (unsigned short x = 0, Xi[3] = {0, 0, y * y * y}; x < w; x++)   // Loop cols
         for (int sy = 0; sy < 2; sy++) {   // 2x2 subpixel rows
             for (int sx = 0; sx < 2; sx++, r = Vec()) {        // 2x2 subpixel cols
@@ -223,16 +226,52 @@ double *raytrace_line(int y, int w, int h, int samps, int *bufferSize) {
 }
 
 
+void raytrace_lines2(Task t, double *buffer, int w, int h, int samps) {
+    Ray cam(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).norm()); // cam pos, dir
+    Vec cx = Vec(w * .5135 / h), cy = (cx % cam.d).norm() * .5135, r;
+
+    for (int y = t.lineStart, line = 0; y <= t.lineEnd; y++, line++) {
+       // fprintf(stderr, "\rRendering (%d spp) %5.2f%%", samps * 4, 100. * y / (h - 1));
+        for (unsigned short x = 0, Xi[3] = {0, 0, y * y * y}; x < w; x++) {  // Loop cols
+            Vec c;
+            for (int sy = 0; sy < 2; sy++) {   // 2x2 subpixel rows
+                for (int sx = 0; sx < 2; sx++, r = Vec()) {        // 2x2 subpixel cols
+                    for (int s = 0; s < samps; s++) {
+
+                        double r1 = 2 * erand48(Xi), dx = r1 < 1 ? sqrt(r1) - 1 : 1 - sqrt(2 - r1);
+                        double r2 = 2 * erand48(Xi), dy = r2 < 1 ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+                        Vec d = cx * (((sx + .5 + dx) / 2 + x) / w - .5) +
+                                cy * (((sy + .5 + dy) / 2 + y) / h - .5) + cam.d;
+                        r = r + radiance(Ray(cam.o + d * 140, d.norm()), 0, Xi) * (1. / samps);
+
+
+                    } // Camera rays are pushed ^^^^^ forward to start in interior
+                    c = c + Vec(clamp(r.x), clamp(r.y), clamp(r.z)) * .25;
+                }
+            }
+            int pixel = 3 * ((line * w) + x);
+            buffer[pixel] = c.x;
+            buffer[pixel + 1] = c.y;
+            buffer[pixel + 2] = c.z;
+        }
+    }
+
+}
+
+
 void runMasterLoop(int numberOfProcesses) {
     int dummy = 0;
     MPI_Status status;
 
-    Vec** allRenderedLines = new Vec*[ROWS];
+    double **allRenderedLines = new double *[ROWS];
+
+    Task *runningTasks = new Task[numberOfProcesses];
+
 
     int nextTask = 0;
     int completedTasks = 0;
 
-    while (completedTasks < ROWS) {
+    while (completedTasks < (ROWS / GRAINSIZE)) {
         //Receive a message of any type
 
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
@@ -245,7 +284,10 @@ void runMasterLoop(int numberOfProcesses) {
             if (nextTask < ROWS) {
                 //prepare his tasks
                 Task t;
-                t.line = nextTask;
+                t.lineStart = nextTask; //0
+                t.lineEnd = nextTask + GRAINSIZE - 1; //1
+
+                runningTasks[status.MPI_SOURCE - 1] = t;
 
                 int taskSize;
                 int *buf = serialize_task(t, &taskSize);
@@ -253,7 +295,7 @@ void runMasterLoop(int numberOfProcesses) {
                 MPI_Send(buf, taskSize, MPI_INT, status.MPI_SOURCE, TASK_MSGTAG, MPI_COMM_WORLD);
                 //now that the send is done, free the buffer
                 free(buf);
-                ++nextTask;
+                nextTask += GRAINSIZE;
             } //we have no more tasks for them... keep them waiting for a bit
         } else if (status.MPI_TAG == RESULT_MSGTAG) {
             //we received a result back from a slave. Print the result
@@ -266,21 +308,16 @@ void runMasterLoop(int numberOfProcesses) {
 
             MPI_Recv(recvBuffer, bufLength, MPI_DOUBLE, status.MPI_SOURCE, RESULT_MSGTAG, MPI_COMM_WORLD, &status);
 
-            int line = (int)recvBuffer[0];
+            Task t = runningTasks[status.MPI_SOURCE - 1];
 
-            Vec* vecs = new Vec[COLS];
-
-            for (int i=0; i< COLS; i++) {
-                int index = i * 3 + 1;
-                vecs[i] = Vec(recvBuffer[index], recvBuffer[index+1], recvBuffer[index+2]);
+            for (int i = t.lineStart, bufferLine = 0; i <= t.lineEnd; i++, bufferLine++) {
+                allRenderedLines[i] = &recvBuffer[bufferLine * COLS * 3];
             }
-
-
-            allRenderedLines[line] = vecs;
 
             //do bookkeeping
             completedTasks++;
         }
+
     }
 
     //now that all tasks are complete, release slaves from their misery
@@ -318,12 +355,16 @@ void runSlaveLoop() {
             Task t = deserialize_task(taskBuffer);
 
             //ray-trace
-            int size = 0;
+            int lines = (t.lineEnd - t.lineStart) + 1;
 
-            double *resultBuffer = raytrace_line(t.line, COLS, ROWS, 24, &size);
+            int bufferSize = COLS * lines * 3;
+
+            double *resultBuffer = new double[bufferSize];
+
+            raytrace_lines2(t, resultBuffer, COLS, ROWS, 1);
 
             //communicate the result back to master
-            MPI_Send(resultBuffer, size, MPI_DOUBLE, 0, RESULT_MSGTAG, MPI_COMM_WORLD);
+            MPI_Send(resultBuffer, bufferSize, MPI_DOUBLE, 0, RESULT_MSGTAG, MPI_COMM_WORLD);
 
             delete[] resultBuffer;
             delete[] taskBuffer;

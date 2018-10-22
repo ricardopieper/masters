@@ -146,11 +146,6 @@ Vec *raytrace_line(int y, int w, int h, int samps) {
             }
         }
 
-    if (y == 15) {
-        for (int i=0; i<w; i++){
-            printf("(%f, %f, %f)\n", c[i].x,c[i].y,c[i].z);
-        }
-    }
 
     return c;
 }

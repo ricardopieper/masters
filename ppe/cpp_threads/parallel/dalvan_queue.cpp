@@ -1,6 +1,7 @@
 #include <mutex>
 #include <deque>
 #include <condition_variable>
+#include <iostream>
 
 #ifndef DALVAN_QUEUE
 #define DALVAN_QUEUE
@@ -58,7 +59,7 @@ namespace comm {
             this->d_queue.clear();
         }
 
-        int size() {
+        unsigned int size() {
             return this->d_queue.size();
         }
 

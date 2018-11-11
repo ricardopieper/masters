@@ -6,9 +6,10 @@
 #include <iostream>
 #include <thread>
 #include <map>
+#include <string>
 #include "dalvan_queue.cpp"
 
-#define DEBUG
+#define DEBUG2
 
 typedef struct StageResult {
     int tag;
@@ -71,7 +72,7 @@ public:
                     StageResult *result;
 
                     while (true) {
-                        result = stage->workQueue.pop();
+                         result = stage->workQueue.pop();
 
                         if (result != nullptr) {
                             void *nextResult = stage->process(result->data);
@@ -159,50 +160,4 @@ public:
     }
 };
 
-class GenerateWork : public Stage {
-public:
-    GenerateWork() : Stage(1, "GenerateWork") {}
-
-    int state = 0;
-
-    void *process(void *in_task) override {
-        if (state == 100000) {
-            return nullptr;
-        }
-        state++;
-        int *newState = new int;
-        *newState = state;
-        return newState;
-    }
-};
-
-
-class Process : public Stage {
-public:
-    Process() : Stage(100, "Process") {}
-
-    void *process(void *in_task) override {
-        int *state = (int *) in_task;
-        //std::cout<<"PP "<<(*state)<<std::endl;
-        *state *= 1;
-        return in_task;
-    }
-};
-
-
-class Collect : public Stage {
-public:
-    Collect(int *sum) : Stage(1, "Collect") {
-        this->sum = sum;
-    }
-
-    int *sum;
-
-    void *process(void *in_task) override {
-        int *state = (int *) in_task;
-        std::cout<<"CP "<<(*state)<<std::endl;
-        *sum += *state;
-        return nullptr;
-    }
-};
 

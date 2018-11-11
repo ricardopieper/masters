@@ -1,102 +1,70 @@
 #include <iostream>
-#include "parallel/StaticParallelFor.h"
-#include "parallel/DynamicParallelFor.cpp"
 #include "parallel/Pipeline.cpp"
 
+class GenerateWork : public Stage {
+public:
+	GenerateWork() : Stage(1, "GenerateWork") {}
 
-void staticParallelFor(int MX, int threads) {
+	int state = 0;
 
-
-    StaticParallelFor spf(0, MX, threads);
-
-
-    long **M = new long *[MX];
-    long **A = new long *[MX];
-    long **B = new long *[MX];
-
-
-    for (int i = 0; i < MX; i++) {
-        A[i] = new long[MX];
-        B[i] = new long[MX];
-        M[i] = new long[MX];
-
-        for (int j = 0; j < MX; j++) {
-            A[i][j] = i + j + 1;
-            B[i][j] = i + j + 1;
-        }
-    }
-
-    spf.run([&M, &A, &B, MX](const Range &r) {
-        for (int i = r.from; i < r.to; i++) {
-            for (long int j = 0; j < MX; j++) {
-                for (long int k = 0; k < MX; k++) {
-                    M[i][j] += (A[i][k] * B[k][j]);
-                }
-            }
-        }
-    });
+	void *process(void *in_task) override {
+		if (state == 100000) {
+			return nullptr;
+		}
+		state++;
+		int *newState = new int;
+		*newState = state;
+		return newState;
+	}
+};
 
 
-}
+class Process : public Stage {
+public:
+	Process() : Stage(8, "Process") {}
 
-void dynamicParallelFor(int MX, int threads) {
+	void *process(void *in_task) override {
+		int *state = (int *)in_task;
+		*state *= 1;
+		return in_task;
+	}
+};
 
-    DynamicParallelFor dpf(0, MX, 50, threads);
 
-    long **M = new long *[MX];
-    long **A = new long *[MX];
-    long **B = new long *[MX];
+class Collect : public Stage {
+public:
+	Collect(int *sum) : Stage(1, "Collect") {
+		this->sum = sum;
+	}
 
+	int *sum;
 
-    for (int i = 0; i < MX; i++) {
-        A[i] = new long[MX];
-        B[i] = new long[MX];
-        M[i] = new long[MX];
+	void *process(void *in_task) override {
+		int *state = (int *)in_task;
+		//if (*state % 1000 == 0) {
+		//	std::cout << "CP " << (*state) << std::endl;
+		//}
+		*sum += *state;
+		return nullptr;
+	}
+};
 
-        for (int j = 0; j < MX; j++) {
-            A[i][j] = i + j + 1;
-            B[i][j] = i + j + 1;
-        }
-    }
-
-    dpf.run([&M, &A, &B, MX](const DynamicRange &r) {
-        for (int i = r.from; i < r.to; i++) {
-            for (long int j = 0; j < MX; j++) {
-                for (long int k = 0; k < MX; k++) {
-                    M[i][j] += (A[i][k] * B[k][j]);
-                }
-            }
-        }
-    });
-
-}
-
-/*int main(int argc, char **argv) {
-    int MX = 4;
-
-    int threads = atoi(argv[1]);
-
-    for (int i=0; i< 100000; i++) {
-        std::cout<<i<<std::endl;
-        dynamicParallelFor(MX, threads);
-    }
-    return 0;
-}*/
 
 int main() {
 
-    Pipeline p = Pipeline();
-    int sum = 0;
-    GenerateWork gw;
-    Process proc;
-    Collect collect(&sum);
+    for (int i=0; i< 100; i++) {
+        Pipeline p = Pipeline();
+        int sum = 0;
+        GenerateWork gw;
+        Process proc;
+        Collect collect(&sum);
 
-    p.add(&gw);
-    p.add(&proc);
-    p.add(&collect);
+        p.add(&gw);
+        p.add(&proc);
+        p.add(&collect);
 
-    p.start();
+        p.start();
 
-    std::cout<<"pipeline is finished, result: "<<sum<<std::endl;
-
+        std::cout<<"pipeline is finished, result: "<<sum<<std::endl;
+    }
 }

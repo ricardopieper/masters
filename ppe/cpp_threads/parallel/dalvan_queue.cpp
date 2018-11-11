@@ -61,6 +61,10 @@ namespace comm {
         int size() {
             return this->d_queue.size();
         }
+
+        std::deque<T> raw_queue() {
+            return this->d_queue;
+        }
     };
 }
 #endif

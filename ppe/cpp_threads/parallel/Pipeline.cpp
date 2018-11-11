@@ -8,7 +8,7 @@
 #include <map>
 #include "dalvan_queue.cpp"
 
-#define DEBUG2
+#define DEBUG
 
 typedef struct StageResult {
     int tag;
@@ -69,46 +69,35 @@ public:
 
                 std::thread thread = std::thread([stage, nextStage, this]() {
                     StageResult *result;
-                    while ((result = stage->workQueue.pop()) != nullptr) {
-                        void *nextResult = stage->process(result->data);
 
-                        if (nextStage != nullptr) { //last stage does not have a next stage
-                            if (nextResult != nullptr) {
-                                auto *nextStageResult = new StageResult();
-                                nextStageResult->data = nextResult;
-                                nextStageResult->tag = result->tag;
-#ifdef DEBUG
-                                std::cout << "|| Stage " << stage->name << " pushing into Stage " << nextStage->name
-                                          << " tag " << (nextStageResult->tag) << std::endl;
-#endif
-                                nextStage->workQueue.push(nextStageResult);
-                            } else {
-#ifdef DEBUG
-                                std::cout << "|| Stage " << stage->name << " pushing into Stage " << nextStage->name
-                                          << " NULLPTR" << std::endl;
-#endif
-                                nextStage->workQueue.push(nullptr);
-                                stage->workQueue.push(nullptr);
-                                break;
+                    while (true) {
+                        result = stage->workQueue.pop();
+
+                        if (result != nullptr) {
+                            void *nextResult = stage->process(result->data);
+                            if (nextStage != nullptr) { //last stage does not have a next stage
+                                if (nextResult != nullptr) {
+                                    auto *nextStageResult = new StageResult();
+                                    nextStageResult->data = nextResult;
+                                    nextStageResult->tag = result->tag; //propagate the tag
+                                    nextStage->workQueue.push(nextStageResult);
+                                } else {
+                                    std::cout << "THIS SHOULD NEVER HAPPEN, REVIEW STAGE CONTRACT" << std::endl;
+                                }
                             }
+                            delete result;
+                        } else {
+                            //if we receive a nullptr, this means that all of our work has already been sent to
+                            //the next stage, so we don't need to worry anymore
+                            //and also notify another thread that the work is done, so other threads may finish
+                            stage->workQueue.push(nullptr);
+                            //we can expect that in the end we'll have a single NULLPTR value in the
+                            //work queue still remaining to be consumed. This is expected because
+                            //the last thread will try to notify any alive threads that the work is done.
+                            //no one will ever listen, but this is normal.
+                            break;
                         }
-
-                        delete result;
                     }
-
-                    if (nextStage != nullptr) {
-
-                //        std::cout << "|| Stage " << stage->name
-                 //                 << " popped NULLPTR and is finishing. Also forcing next stage to finish" << std::endl;
-                        nextStage->workQueue.push(nullptr);
-                    } else {
-
-                    //    std::cout << "|| Stage " << stage->name
-                      //            << " popped NULLPTR and is finishing. It's the last stage in the pipeline, so there's no next stage to force finishing"
-                       //           << std::endl;
-                    }
-
-                    std::cout << "||FT->" << stage->name<< std::endl;
                 });
 
                 stage->workerThreads.push_back(std::move(thread));
@@ -116,38 +105,38 @@ public:
 
         }
 
-        //for stage 0, we only create 1 thread. Keep making it generate work until it returns a nullptr
         Stage *firstStage = stages[0];
         Stage *secondStage = stages[1];
-        firstStage->workerThreads.emplace_back([firstStage, secondStage] {
-            int tag = 0;
-            void *result;
-            while ((result = firstStage->process(nullptr)) != nullptr) {
-                auto *stageResult = new StageResult();
-                stageResult->data = result;
-                stageResult->tag = tag++;
-#ifdef DEBUG
-                std::cout << "|| Stage " << firstStage->name << " pushing into Stage " << secondStage->name << " tag "
-                          << (stageResult->tag) << std::endl;
-#endif
-                secondStage->workQueue.push(stageResult);
+        int tag = 0;
+        void *result;
+
+        while ((result = firstStage->process(nullptr)) != nullptr) {
+            auto *stageResult = new StageResult();
+            stageResult->data = result;
+            stageResult->tag = tag++;
+            secondStage->workQueue.push(stageResult);
+        }
+        secondStage->workQueue.push(nullptr);
+
+        //join all threads from multithreaded stages
+        for (int i = 1; i < stages.size(); i++) {
+            Stage *stage = stages[i];
+            Stage *nextStage = nullptr;
+
+            if (i < stages.size() - 1) {
+                nextStage = stages[i + 1];
             }
-#ifdef DEBUG
-            std::cout << "|| Stage " << firstStage->name << " pushing into Stage " << secondStage->name << " NULLPTR"
-                      << std::endl;
-#endif
-            secondStage->workQueue.push(nullptr);
-        });
-
-        //join all threads
-
-        for (Stage *stage: stages) {
             for (std::thread &th : stage->workerThreads) {
-
-   //             std::cout << "Joining thread for stage " << stage->name << std::endl;
+                //             std::cout << "Joining thread for stage " << stage->name << std::endl;
                 th.join();
-                std::cout << "J " << stage->name << std::endl;
+                //std::cout << "J " << stage->name << std::endl;
             }
+            //when all threads of this stage have finished, send a nullptr to the next stage
+            if (nextStage != nullptr) {
+                nextStage->workQueue.push(nullptr);
+            }
+            //the last stage will receive a single nullptr only when all the threads from the previous stage have
+            //finished
         }
 
         for (Stage *stage: stages) {
@@ -156,6 +145,13 @@ public:
             //also add a finish signal so other threads can pick it up
 #ifdef DEBUG
             std::cout << "Number of finish signals for stage "<<stage->name<<": " <<stage->workQueue.size()<<std::endl;
+            for (StageResult *garbage : stage->workQueue.raw_queue()) {
+                if (garbage == nullptr) {
+                    std::cout << stage->name << " -> NULLPTR" << std::endl;
+                } else {
+                    std::cout << stage->name << " " << garbage->tag << std::endl;
+                }
+            }
 #endif
             stage->workQueue.clear();
         }
@@ -170,7 +166,7 @@ public:
     int state = 0;
 
     void *process(void *in_task) override {
-        if (state == 10) {
+        if (state == 100000) {
             return nullptr;
         }
         state++;
@@ -183,10 +179,11 @@ public:
 
 class Process : public Stage {
 public:
-    Process() : Stage(200, "Process") {}
+    Process() : Stage(100, "Process") {}
 
     void *process(void *in_task) override {
         int *state = (int *) in_task;
+        //std::cout<<"PP "<<(*state)<<std::endl;
         *state *= 1;
         return in_task;
     }
@@ -197,16 +194,14 @@ class Collect : public Stage {
 public:
     Collect(int *sum) : Stage(1, "Collect") {
         this->sum = sum;
-        std::cout << "Starting state " << (*sum) << std::endl;
     }
 
     int *sum;
 
     void *process(void *in_task) override {
         int *state = (int *) in_task;
-       // std::cout << "Popped " << (*state) << std::endl;
+        std::cout<<"CP "<<(*state)<<std::endl;
         *sum += *state;
-        //std::cout << "Collected "<<(*sum)<<std::endl;
         return nullptr;
     }
 };

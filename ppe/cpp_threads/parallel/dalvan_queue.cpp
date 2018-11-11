@@ -2,6 +2,8 @@
 #include <deque>
 #include <condition_variable>
 
+#ifndef DALVAN_QUEUE
+#define DALVAN_QUEUE
 
 template<typename T>
 class PopResult {
@@ -9,7 +11,6 @@ public:
     bool empty;
     T result;
 };
-
 
 
 namespace comm {
@@ -53,6 +54,13 @@ namespace comm {
             return popResult;
         }
 
+        void clear() {
+            this->d_queue.clear();
+        }
 
+        int size() {
+            return this->d_queue.size();
+        }
     };
 }
+#endif

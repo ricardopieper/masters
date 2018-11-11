@@ -86,15 +86,17 @@ void dynamicParallelFor(int MX, int threads) {
 int main() {
 
     Pipeline p = Pipeline();
-
+    int sum = 0;
     GenerateWork gw;
     Process proc;
-    Collect collect;
+    Collect collect(&sum);
 
     p.add(&gw);
     p.add(&proc);
     p.add(&collect);
 
     p.start();
+
+    std::cout<<"pipeline is finished, result: "<<sum<<std::endl;
 
 }

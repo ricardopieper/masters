@@ -1,0 +1,49 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+
+namespace SeminarioTPL
+{
+    class Program
+    {
+
+        static void DrawLine(Graphics graphics, byte[] results, int line)
+        {
+            for (int i = 0; i < results.Length; i++)
+            {
+                Color c = Color.FromArgb(255, results[i], results[i], results[i]);
+                Rectangle r = new Rectangle(i, line, 1, 1);
+                graphics.FillRectangle(new SolidBrush(c), r);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            int dimensions = Convert.ToInt32(args[0]);
+            int niter = Convert.ToInt32(args[1]);
+         
+            Parameters parameters = new Parameters
+            {
+                InitA = -2.125,
+                InitB = -1.5,
+                Range = 3.0,
+                Size = dimensions,
+                Iterations = niter,
+                ParallelismLevel = 8,
+                Step = 3.0d / (double)dimensions,
+            };
+            
+            IImageDrawing drawing = new ImageDrawer(dimensions);
+            IMandelbrot mandelbrot = new SequentialMandelbrot(drawing);
+           
+            mandelbrot.Calculate(parameters);
+
+            drawing.SaveTo("mandel.png");
+      
+            Console.WriteLine("Done!");
+        }
+
+    }
+
+}

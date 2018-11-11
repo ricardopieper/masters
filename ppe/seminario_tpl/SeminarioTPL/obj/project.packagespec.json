@@ -1,0 +1,47 @@
+﻿{
+  "version": "1.0.0",
+  "restore": {
+    "projectUniqueName": "/home/ricardo/PUCRS/ppe/seminario_tpl/SeminarioTPL/SeminarioTPL.csproj",
+    "projectName": "SeminarioTPL",
+    "projectPath": "/home/ricardo/PUCRS/ppe/seminario_tpl/SeminarioTPL/SeminarioTPL.csproj",
+    "outputPath": "/home/ricardo/PUCRS/ppe/seminario_tpl/SeminarioTPL/obj/",
+    "projectStyle": "PackageReference",
+    "fallbackFolders": [
+      "/home/ricardo/dotnet/sdk/NuGetFallbackFolder"
+    ],
+    "originalTargetFrameworks": [
+      "netcoreapp2.2"
+    ],
+    "frameworks": {
+      "netcoreapp2.2": {
+        "projectReferences": {}
+      }
+    },
+    "warningProperties": {
+      "warnAsError": [
+        "NU1605"
+      ]
+    }
+  },
+  "frameworks": {
+    "netcoreapp2.2": {
+      "dependencies": {
+        "Microsoft.NETCore.App": {
+          "suppressParent": "All",
+          "target": "Package",
+          "version": "[2.2.0-preview2-26905-02, )",
+          "autoReferenced": true
+        },
+        "System.Drawing.Common": {
+          "target": "Package",
+          "version": "[4.5.1, )"
+        }
+      },
+      "imports": [
+        "net461"
+      ],
+      "assetTargetFallback": true,
+      "warn": true
+    }
+  }
+}

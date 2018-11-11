@@ -1,0 +1,74 @@
+All the tests were run on a Core i7:
+processor       : 0
+vendor_id       : GenuineIntel
+cpu family      : 6
+model           : 58
+model name      : Intel(R) Core(TM) i7-3612QM CPU @ 2.10GHz
+stepping        : 9
+microcode       : 0x20
+cpu MHz         : 1895.113
+cache size      : 6144 KB
+physical id     : 0
+siblings        : 8
+core id         : 0
+cpu cores       : 4
+apicid          : 0
+initial apicid  : 0
+fpu             : yes
+fpu_exception   : yes
+cpuid level     : 13
+wp              : yes
+flags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2ss ht tm pbe syscall nx rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm cpuid_fault epb pti ssbd ibrs ibpb stibp tpr_shadow vnmi flexpriority ept vpid fsgsbase smep ermsxsaveopt dtherm ida arat pln pts flush_l1d
+bugs            : cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf
+bogomips        : 4190.41
+clflush size    : 64
+cache_alignment : 64
+address sizes   : 36 bits physical, 48 bits virtual
+
+8GB ram
+8 logical cores (Hyperthreading), 4 physical cores
+
+
+Map:
+
+There are 2 FORs and a function call that needs to be done synchronously.
+Method: Parallelize the 2nd for.
+From 1 to 8 workers using tbb::task_scheduler_init(8): 9.5 seconds to 1.7 seconds.
+Performance improvement: Negligible
+Raw data:
+
+    ./map 800 20000 20: (With tbb::blocked_range<int>(0, dim, 1))
+    Average on 20 experiments = 1529.260150 (ms) Std. Dev. 39.105756
+    
+    ./map 800 20000 20: (With tbb::blocked_range<int>(0, dim, 1)), NO_DISPLAY:
+    Average on 20 experiments = 1483.030050 (ms) Std. Dev. 38.510129
+
+    ./map 800 20000 20: Automatic partitioning, NO_DISPLAY:
+    Average on 20 experiments = 1466.882750 (ms) Std. Dev. 38.299905
+
+    ./map 800 20000 20: (With tbb::blocked_range<int>(0, dim, 100))
+    Average on 20 experiments = 3659.682700 (ms) Std. Dev. 60.495311
+
+Speedup analysis:
+    - Automatic partitioning
+    - NO_DISPLAY
+    - task_scheduler_init(N)
+    - ./map 800 20000 20
+
+    for 32 workers:
+        Average on 20 experiments = 1611.237350 (ms) Std. Dev. 40.140221
+    for 16 workers:
+        Average on 20 experiments = 1481.552300 (ms) Std. Dev. 38.490938
+    for 8 workers (Optimal settings):    
+        Average on 20 experiments = 1466.882750 (ms) Std. Dev. 38.299905
+    for 4 workers:
+        Average on 20 experiments = 2516.641750 (ms) Std. Dev. 50.166141
+    for 2 workers:
+        Average on 20 experiments = 4796.339050 (ms) Std. Dev. 69.255607
+    for 1 worker:
+        Average on 5 experiments = 9212.175600 (ms) Std. Dev. 95.980079
+
+
+Pipeline:
+
+processing and printing can be done in parallel. While prints 1st line, process 2nd line

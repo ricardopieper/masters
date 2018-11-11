@@ -1,0 +1,3 @@
+/home/ricardo/PUCRS/ppe/cpp_threads/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/ricardo/PUCRS/ppe/cpp_threads/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/ricardo/PUCRS/ppe/cpp_threads/cmake-build-debug/CMakeFiles/cpp_threads.dir

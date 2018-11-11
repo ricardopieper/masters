@@ -1,1 +1,0 @@
-/usr/bin/c++  -g   CMakeFiles/cpp_threads.dir/main.cpp.o CMakeFiles/cpp_threads.dir/parallel/StaticParallelFor.cpp.o CMakeFiles/cpp_threads.dir/parallel/DynamicParallelFor.cpp.o CMakeFiles/cpp_threads.dir/parallel/dalvan_queue.cpp.o CMakeFiles/cpp_threads.dir/parallel/Pipeline.cpp.o  -o cpp_threads -lpthread 

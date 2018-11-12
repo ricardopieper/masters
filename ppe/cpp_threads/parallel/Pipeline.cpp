@@ -1,3 +1,5 @@
+#include <utility>
+
 
 #include <mutex>
 #include <deque>
@@ -7,6 +9,7 @@
 #include <thread>
 #include <map>
 #include <string>
+#include <set>
 #include "dalvan_queue.cpp"
 
 #define DEBUG2
@@ -14,25 +17,31 @@
 typedef struct StageResult {
     int tag;
     void *data;
+
+    bool operator()(const StageResult *lhs, const StageResult *rhs) const {
+        return lhs->tag < rhs->tag;
+    }
 } StageResult;
 
 
 class Stage {
 public:
 
-    explicit Stage(int threads, std::string name) {
+    explicit Stage(int threads, bool ordered = false, std::string name = "Stage") {
         this->threads = threads;
-        this->name = name;
+        this->name = std::move(name);
+        this->ordered = ordered;
     };
 
     virtual void *process(void *task) = 0;
 
     int threads;
+    bool ordered;
     std::string name;
-
     std::vector<std::thread> workerThreads;
-
     comm::queue<StageResult *> workQueue;
+    std::set<StageResult *, StageResult> orderedWorkQueue;
+    int orderedTag;
 };
 
 
@@ -66,39 +75,53 @@ public:
                 nextStage = stages[stageId + 1];
             }
 
-            for (int i = 0; i < stage->threads; i++) {
+            //if we are ordered, then allow only 1 thread to be created
+            int threads = stage->ordered ? 1 : stage->threads;
 
-                std::thread thread = std::thread([stage, nextStage, this]() {
-                    StageResult *result;
+            for (int i = 0; i < threads; i++) {
 
-                    while (true) {
-                         result = stage->workQueue.pop();
+                std::thread thread = std::thread([threads, stage, nextStage, this]() {
 
-                        if (result != nullptr) {
-                            void *nextResult = stage->process(result->data);
-                            if (nextStage != nullptr) { //last stage does not have a next stage
-                                if (nextResult != nullptr) {
-                                    auto *nextStageResult = new StageResult();
-                                    nextStageResult->data = nextResult;
-                                    nextStageResult->tag = result->tag; //propagate the tag
-                                    nextStage->workQueue.push(nextStageResult);
-                                } else {
-                                    std::cout << "THIS SHOULD NEVER HAPPEN, REVIEW STAGE CONTRACT" << std::endl;
-                                }
+                    if (!stage->ordered) {
+                        while (true) {
+                            StageResult *result = stage->workQueue.pop();
+
+                            if (result != nullptr) {
+                                runStage(stage, nextStage, result);
+                                delete result;
+                            } else {
+                                //if we receive a nullptr, this means that all of our work has already been sent to
+                                //the next stage, so we don't need to worry anymore
+                                //and also notify another thread that the work is done, so other threads may finish
+                                stage->workQueue.push(nullptr);
+                                //we can expect that in the end we'll have a single NULLPTR value in the
+                                //work queue still remaining to be consumed. This is expected because
+                                //the last thread will try to notify any alive threads that the work is done.
+                                //no one will ever listen, but this is normal.
+                                break;
                             }
-                            delete result;
-                        } else {
-                            //if we receive a nullptr, this means that all of our work has already been sent to
-                            //the next stage, so we don't need to worry anymore
-                            //and also notify another thread that the work is done, so other threads may finish
-                            stage->workQueue.push(nullptr);
-                            //we can expect that in the end we'll have a single NULLPTR value in the
-                            //work queue still remaining to be consumed. This is expected because
-                            //the last thread will try to notify any alive threads that the work is done.
-                            //no one will ever listen, but this is normal.
-                            break;
+                        }
+                    } else {
+
+                        while (true) {
+                            StageResult *poppedResult = stage->workQueue.pop();
+                            if (poppedResult == nullptr) break;
+
+                            if (poppedResult->tag == stage->orderedTag) {
+
+                                runStage(stage, nextStage, poppedResult);
+                                stage->orderedTag++;
+                                checkOrderedWorkQueue(stage, nextStage);
+
+                            } else {
+                                stage->orderedWorkQueue.insert(poppedResult);
+                                checkOrderedWorkQueue(stage, nextStage);
+                            }
+
                         }
                     }
+
+
                 });
 
                 stage->workerThreads.push_back(std::move(thread));
@@ -157,6 +180,45 @@ public:
             stage->workQueue.clear();
         }
 
+    }
+
+    void checkOrderedWorkQueue(Stage *stage, Stage *nextStage) const {
+        StageResult *poppedResult = nullptr;
+        while (true) {
+
+            auto it = stage->orderedWorkQueue.begin();
+            auto it_end = stage->orderedWorkQueue.end();
+            if (it == it_end) {
+                break;
+            } else {
+
+                poppedResult = *it;
+
+                if (poppedResult->tag == stage->orderedTag) {
+                    runStage(stage, nextStage, poppedResult);
+                    stage->orderedWorkQueue.erase(it);
+                    stage->orderedTag++;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    void runStage(Stage *stage, Stage *nextStage, StageResult *result) const {
+        void *nextResult = stage->process(result->data);
+
+        if (nextStage != nullptr) { //last stage does not have a next stage
+            if (nextResult != nullptr) {
+                auto *nextStageResult = new StageResult();
+                nextStageResult->data = nextResult;
+                nextStageResult->tag = result->tag; //propagate the tag
+                nextStage->workQueue.push(nextStageResult);
+            } else {
+                std::cout << "REVIEW IF YOU ADDED THE STAGES IN THE INTENDED ORDER,"
+                             " SOMETHING IS DEFINITELY WRONG" << std::endl;
+            }
+        }
     }
 };
 

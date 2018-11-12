@@ -45,6 +45,7 @@ public:
 		//	std::cout << "CP " << (*state) << std::endl;
 		//}
 		*sum += *state;
+		delete in_task;
 		return nullptr;
 	}
 };
@@ -65,6 +66,6 @@ int main() {
 
         p.start();
 
-        std::cout<<"pipeline is finished, result: "<<sum<<std::endl;
+        std::cout<<"pipeline "<<i <<" is finished, result: "<<sum<<std::endl;
     }
 }
